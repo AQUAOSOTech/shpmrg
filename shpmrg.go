@@ -6,6 +6,8 @@ import (
     "github.com/jonas-p/go-shp"
     "os"
     "path/filepath"
+    "sync"
+    "sync/atomic"
 )
 
 var inPath = flag.String("i", "", "Input file glob path to shapefiles")
@@ -72,47 +74,68 @@ func main() {
         os.Exit(1)
     }
 
+    var rowCursor int64
+    var filesProcessed int64
+
     // pass 2, copy shapefiles
-    for i, shapePath := range fileMatches {
-        shapefile, err := shp.Open(shapePath)
+    var wg sync.WaitGroup
+    var writelock sync.Mutex
+    for _, shPath := range fileMatches {
+        sf, err := shp.Open(shPath)
         if err != nil {
-            fmt.Println("Problem reading", shapePath, ", skipping. ", err)
+            fmt.Println("Problem reading", shPath, ", skipping. ", err)
             continue
         }
 
-        localFields := shapefile.Fields()
+        wg.Add(1)
 
-        // loop through all features in the shapefile
-        fmt.Println("Adding shapefile rows", shapePath, "(", i+1, "of", len(fileMatches), ")")
-        for shapefile.Next() {
-            row, shape := shapefile.Shape()
+        go func(shapePath string, shapefile *shp.Reader){
+            localFields := shapefile.Fields()
 
-            // print feature
-            //fmt.Println(reflect.TypeOf(shape).Elem(), shape.BBox())
-            outputFile.Write(shape)
+            // loop through all features in the shapefile
+            for shapefile.Next() {
+                localRow, shape := shapefile.Shape()
 
-            // print attributes
-            var remoteKey int
-            var fieldName string
-            for localKey, field := range localFields {
-                val := shapefile.ReadAttribute(row, localKey)
-                //fmt.Printf("\t%v: %v\row", f, val)
-                fieldName = string(field.Name[:11])
-                remoteKey = fieldNameToIndex[fieldName]
-                err = outputFile.WriteAttribute(row, remoteKey, val)
-                if err != nil {
-                    fmt.Println("Failed writing attribute, skipping. ", localKey, val, err)
-                    continue
+                // print feature
+                //fmt.Println(reflect.TypeOf(shape).Elem(), shape.BBox())
+                writelock.Lock()
+                outputFile.Write(shape)
+                writelock.Unlock()
+
+                // print attributes
+                var remoteKey int
+                var fieldName string
+                for localKey, field := range localFields {
+                    val := shapefile.ReadAttribute(localRow, localKey)
+                    //fmt.Printf("\t%v: %v\row", f, val)
+                    fieldName = string(field.Name[:11])
+                    remoteKey = fieldNameToIndex[fieldName]
+                    writelock.Lock()
+                    err = outputFile.WriteAttribute(int(rowCursor), remoteKey, val)
+                    writelock.Unlock()
+                    if err != nil {
+                        fmt.Println("Failed writing attribute, skipping. ", localKey, val, err)
+                        continue
+                    }
+                }
+
+                atomic.AddInt64(&rowCursor, 1)
+                if rowCursor % 10000 == 0 {
+                    fmt.Println("Total shapes processed:", rowCursor)
                 }
             }
-        }
 
-        err = shapefile.Close()
-        if err != nil {
-            fmt.Println("Failed closing shapefile", shapePath, err)
-            continue
-        }
+            final := atomic.AddInt64(&filesProcessed, 1)
+            err = shapefile.Close()
+            if err != nil {
+                fmt.Println("Failed closing shapefile", shapePath, err)
+            } else {
+                fmt.Println("Finished", shapePath, "(", final, "of", len(fileMatches), ")")
+            }
+        }(shPath, sf)
     }
+
+    wg.Wait()
 
     outputFile.Close()
 }

@@ -1,6 +1,6 @@
 # shpmrg
 
-`shpmrg` is a utility for merging shapefiles.
+`shpmrg` is a multithreaded utility for merging shapefiles.
 
 The utility is simplistic and assumes all the shapefiles have the same fields and types of objects. It will not work if a shapefile mixes points and polygons, for example. Or if one of the shapefiles has fields that the other shapefiles lack.
 
