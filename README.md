@@ -1,6 +1,6 @@
 # shpmrg
 
-`shpmrg` is a multithreaded utility for merging shapefiles.
+`shpmrg` is a multithreaded utility for working with shapefiles.
 
 The utility is simplistic and assumes all the shapefiles have the same fields and types of objects. It will not work if a shapefile mixes points and polygons, for example. Or if one of the shapefiles has fields that the other shapefiles lack.
 
@@ -10,10 +10,33 @@ Releases are available for mac, windows and linux at:
 
 - https://github.com/AQUAOSOTech/shpmrg/releases
 
-Example of merging shapefiles in the folder "myshapefiles" into the file "output_file.shp"
+### Example of merging shapefiles
+
+Get shapefiles in the folder "myshapefiles" and extract into the file "output_file.shp"
 
 ```bash
-shpmrg -i myshapefiles/*.shp -o output_file.shp
+shpmrg -i myshapefiles/*.shp -o output_file.shp merge
+```
+
+```text
+Total shapes processed: 10000
+Finished /Users/jpx/myshapefiles/a.shp ( 1 of 3 )
+Finished /Users/jpx/myshapefiles/b.shp ( 2 of 3 )
+Total shapes processed: 20000
+Total shapes processed: 30000
+Total shapes processed: 40000
+Total shapes processed: 50000
+Finished /Users/jpx/myshapefiles/c.shp ( 3 of 3 )
+Done
+
+```
+
+### Example of extracting attributes into CSV
+
+Get shapefiles in the folder "myshapefiles" and extract into the file "output_file.shp"
+
+```bash
+shpmrg -i myshapefiles/*.shp -o output_file.shp extract-attrs
 ```
 
 By default, the utility expects the shapes to be polygons.

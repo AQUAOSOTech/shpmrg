@@ -17,5 +17,6 @@ shpmrg
 *.shp
 *.shx
 *.dbf
+*.csv
 
 .idea

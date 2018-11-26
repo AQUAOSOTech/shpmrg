@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/csv"
     "flag"
     "fmt"
     "github.com/jonas-p/go-shp"
@@ -16,6 +17,10 @@ var shapeType = flag.Int("t", 25, "Default is polygon; Shape type from https://g
 
 func main() {
     flag.Parse()
+    if len(os.Args) < 2 {
+        fmt.Println("Last argument must be one of: merge, extract-attrs")
+        os.Exit(1)
+    }
     if *inPath == "" {
         fmt.Println("Missing -i input file(s)")
         flag.PrintDefaults()
@@ -26,6 +31,7 @@ func main() {
         flag.PrintDefaults()
         os.Exit(1)
     }
+    action := os.Args[len(os.Args)-1]
 
     fileMatches, err := filepath.Glob(*inPath)
     if err != nil {
@@ -34,11 +40,6 @@ func main() {
     }
     if len(fileMatches) < 1 {
         fmt.Println("No matches for input pattern")
-        os.Exit(1)
-    }
-    outputFile, err := shp.Create(*outPath, shp.ShapeType(*shapeType))
-    if err != nil {
-        fmt.Println(err)
         os.Exit(1)
     }
 
@@ -66,6 +67,26 @@ func main() {
                 fieldNameToIndex[fieldName] = fieldIndex
             }
         }
+    }
+
+    if action == "merge" {
+        merge(fileMatches, allFields, fieldNameToIndex)
+    } else if action == "extract-attrs" {
+        extractAtrrs(fileMatches, allFields, fieldNameToIndex)
+    } else {
+        fmt.Println("Last argument must be one of: merge, extract-attrs")
+        os.Exit(1)
+    }
+
+    fmt.Println("Done")
+}
+
+
+func merge(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[string]int) {
+    outputFile, err := shp.Create(*outPath, shp.ShapeType(*shapeType))
+    if err != nil {
+        fmt.Println(err)
+        os.Exit(1)
     }
 
     err = outputFile.SetFields(allFields)
@@ -132,10 +153,109 @@ func main() {
             } else {
                 fmt.Println("Finished", shapePath, "(", final, "of", len(fileMatches), ")")
             }
+            wg.Done()
         }(shPath, sf)
     }
 
     wg.Wait()
 
     outputFile.Close()
+}
+
+func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[string]int) {
+    outputFile, err := os.Create(*outPath)
+    if err != nil {
+        fmt.Println(err)
+        os.Exit(1)
+    }
+    writer := csv.NewWriter(outputFile)
+    if err != nil {
+        fmt.Print(err)
+        os.Exit(1)
+    }
+
+    // write header
+    var header []string
+    for k, _ := range fieldNameToIndex {
+        header = append(header, k)
+    }
+    err = writer.Write(header)
+    if err != nil {
+        fmt.Println("Failed to write csv header", err)
+        os.Exit(1)
+    }
+
+    var rowCursor int64
+    var filesProcessed int64
+
+    // pass 2, copy shapefiles
+    var wg sync.WaitGroup
+    var writelock sync.Mutex
+
+    for _, shPath := range fileMatches {
+        sf, err := shp.Open(shPath)
+        if err != nil {
+            fmt.Println("Problem reading", shPath, ", skipping. ", err)
+            continue
+        }
+
+        wg.Add(1)
+
+        go func(shapePath string, shapefile *shp.Reader){
+            localFields := shapefile.Fields()
+
+            // loop through all features in the shapefile
+            var localRowIndex int
+            var csvRow []string
+            for shapefile.Next() {
+                localRowIndex, _ = shapefile.Shape()
+
+                // print feature
+                //fmt.Println(reflect.TypeOf(shape).Elem(), shape.BBox())
+                writelock.Lock()
+                writelock.Unlock()
+
+                // print attributes
+                var fieldName string
+                var column int
+                csvRow = make([]string, len(fieldNameToIndex))
+                for localKey, field := range localFields {
+                    val := shapefile.ReadAttribute(localRowIndex, localKey)
+                    //fmt.Printf("\t%v: %v\row", f, val)
+                    fieldName = string(field.Name[:11])
+                    column = fieldNameToIndex[fieldName]
+                    csvRow[column] = val
+                }
+
+                writelock.Lock()
+                err = writer.Write(csvRow)
+                writelock.Unlock()
+                if err != nil {
+                    fmt.Println("Failed writing csv row", localRowIndex, shapePath, err)
+                    continue
+                }
+
+                atomic.AddInt64(&rowCursor, 1)
+                if rowCursor % 10000 == 0 {
+                    fmt.Println("Total shapes processed:", rowCursor)
+                }
+            }
+
+            final := atomic.AddInt64(&filesProcessed, 1)
+            err = shapefile.Close()
+            if err != nil {
+                fmt.Println("Failed closing shapefile", shapePath, err)
+            } else {
+                fmt.Println("Finished", shapePath, "(", final, "of", len(fileMatches), ")")
+            }
+            wg.Done()
+        }(shPath, sf)
+    }
+
+    wg.Wait()
+
+    err = outputFile.Close()
+    if err != nil {
+        fmt.Print("failed closing CSV", *outPath, err)
+    }
 }
