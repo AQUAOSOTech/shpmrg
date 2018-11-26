@@ -40,8 +40,10 @@ func main() {
         os.Exit(1)
     }
 
-    wroteFields := false
+    var allFields []shp.Field
+    fieldNameToIndex := make(map[string]int)
 
+    // pass 1, get all possible allFields
     for i, shapePath := range fileMatches {
         shapefile, err := shp.Open(shapePath)
         if err != nil {
@@ -49,19 +51,39 @@ func main() {
             continue
         }
 
-        // fields from the attribute table (DBF)
-        fields := shapefile.Fields()
-        if !wroteFields {
-            wroteFields = true
-            err = outputFile.SetFields(fields)
-            if err != nil {
-                fmt.Println("Failed setting output shapefile fields, aborting!", err, fields)
-                os.Exit(1)
+        fmt.Println("Processing shapefile allFields", shapePath, "(", i+1, "of", len(fileMatches), ")")
+
+        localFields := shapefile.Fields()
+        var fieldName string
+        var fieldIndex int
+        for _, localField := range localFields {
+            fieldName = string(localField.Name[:11])
+            if _, exists := fieldNameToIndex[fieldName]; !exists {
+                allFields = append(allFields, localField)
+                fieldIndex = len(allFields) - 1
+                fieldNameToIndex[fieldName] = fieldIndex
             }
         }
+    }
+
+    err = outputFile.SetFields(allFields)
+    if err != nil {
+        fmt.Println("Failed setting output shapefile allFields, aborting!", err, allFields)
+        os.Exit(1)
+    }
+
+    // pass 2, copy shapefiles
+    for i, shapePath := range fileMatches {
+        shapefile, err := shp.Open(shapePath)
+        if err != nil {
+            fmt.Println("Problem reading", shapePath, ", skipping. ", err)
+            continue
+        }
+
+        localFields := shapefile.Fields()
 
         // loop through all features in the shapefile
-        fmt.Println("Adding shapefile", shapePath, "(", i+1, "of", len(fileMatches), ")")
+        fmt.Println("Adding shapefile rows", shapePath, "(", i+1, "of", len(fileMatches), ")")
         for shapefile.Next() {
             row, shape := shapefile.Shape()
 
@@ -70,12 +92,16 @@ func main() {
             outputFile.Write(shape)
 
             // print attributes
-            for k/*, field*/ := range fields {
-                val := shapefile.ReadAttribute(row, k)
+            var remoteKey int
+            var fieldName string
+            for localKey, field := range localFields {
+                val := shapefile.ReadAttribute(row, localKey)
                 //fmt.Printf("\t%v: %v\row", f, val)
-                err = outputFile.WriteAttribute(row, k, val)
+                fieldName = string(field.Name[:11])
+                remoteKey = fieldNameToIndex[fieldName]
+                err = outputFile.WriteAttribute(row, remoteKey, val)
                 if err != nil {
-                    fmt.Println("Failed writing attribute, skipping. ", k, val, err)
+                    fmt.Println("Failed writing attribute, skipping. ", localKey, val, err)
                     continue
                 }
             }
