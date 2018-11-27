@@ -160,6 +160,8 @@ func merge(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[str
     wg.Wait()
 
     outputFile.Close()
+
+    fmt.Println("Processed", rowCursor)
 }
 
 func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[string]int) {
@@ -176,8 +178,9 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
 
     // write header
     var header []string
-    for k, _ := range fieldNameToIndex {
-        header = append(header, k)
+    // the order matters
+    for _, f := range allFields {
+        header = append(header, string(f.Name[:11]))
     }
     err = writer.Write(header)
     if err != nil {
@@ -212,8 +215,6 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
 
                 // print feature
                 //fmt.Println(reflect.TypeOf(shape).Elem(), shape.BBox())
-                writelock.Lock()
-                writelock.Unlock()
 
                 // print attributes
                 var fieldName string
@@ -253,9 +254,11 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
     }
 
     wg.Wait()
+    writer.Flush()
 
     err = outputFile.Close()
     if err != nil {
-        fmt.Print("failed closing CSV", *outPath, err)
+        fmt.Println("failed closing CSV", *outPath, err)
     }
+    fmt.Println("Processed", rowCursor)
 }
