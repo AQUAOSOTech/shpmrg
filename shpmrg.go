@@ -7,6 +7,7 @@ import (
     "github.com/jonas-p/go-shp"
     "os"
     "path/filepath"
+    "regexp"
     "sync"
     "sync/atomic"
 )
@@ -14,6 +15,7 @@ import (
 var inPath = flag.String("i", "", "Input file glob path to shapefiles")
 var outPath = flag.String("o", "", "Output file location")
 var shapeType = flag.Int("t", 25, "Default is polygon; Shape type from https://godoc.org/github.com/jonas-p/go-shp#ShapeType")
+var alphaNumeric = regexp.MustCompile("[^a-zA-Z0-9]+")
 
 func main() {
     flag.Parse()
@@ -81,7 +83,6 @@ func main() {
     fmt.Println("Done")
 }
 
-
 func merge(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[string]int) {
     outputFile, err := shp.Create(*outPath, shp.ShapeType(*shapeType))
     if err != nil {
@@ -110,7 +111,7 @@ func merge(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[str
 
         wg.Add(1)
 
-        go func(shapePath string, shapefile *shp.Reader){
+        go func(shapePath string, shapefile *shp.Reader) {
             localFields := shapefile.Fields()
 
             // loop through all features in the shapefile
@@ -141,7 +142,7 @@ func merge(fileMatches []string, allFields []shp.Field, fieldNameToIndex map[str
                 }
 
                 atomic.AddInt64(&rowCursor, 1)
-                if rowCursor % 10000 == 0 {
+                if rowCursor%10000 == 0 {
                     fmt.Println("Total shapes processed:", rowCursor)
                 }
             }
@@ -180,7 +181,7 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
     var header []string
     // the order matters
     for _, f := range allFields {
-        header = append(header, string(f.Name[:11]))
+        header = append(header, cleanName(f.Name[:11]))
     }
     err = writer.Write(header)
     if err != nil {
@@ -204,7 +205,7 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
 
         wg.Add(1)
 
-        go func(shapePath string, shapefile *shp.Reader){
+        go func(shapePath string, shapefile *shp.Reader) {
             localFields := shapefile.Fields()
 
             // loop through all features in the shapefile
@@ -219,7 +220,7 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
                 // print attributes
                 var fieldName string
                 var column int
-                csvRow = make([]string, len(fieldNameToIndex))
+                csvRow = newRow(len(fieldNameToIndex))
                 for localKey, field := range localFields {
                     val := shapefile.ReadAttribute(localRowIndex, localKey)
                     //fmt.Printf("\t%v: %v\row", f, val)
@@ -237,7 +238,7 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
                 }
 
                 atomic.AddInt64(&rowCursor, 1)
-                if rowCursor % 10000 == 0 {
+                if rowCursor%10000 == 0 {
                     fmt.Println("Total shapes processed:", rowCursor)
                 }
             }
@@ -261,4 +262,18 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
         fmt.Println("failed closing CSV", *outPath, err)
     }
     fmt.Println("Processed", rowCursor)
+}
+
+// seeding everything with empty string keeps there from being nulls on import, which breaks
+// many simple sql import tools
+func newRow(size int) (r []string) {
+    r = make([]string, size)
+    for i := 0; i < size; i++ {
+        r[i] = ""
+    }
+    return r
+}
+
+func cleanName(name []byte) string {
+    return string(alphaNumeric.ReplaceAll(name, []byte("")))
 }
