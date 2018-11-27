@@ -2,7 +2,7 @@
 
 `shpmrg` is a multithreaded utility for working with shapefiles.
 
-The utility is simplistic and assumes all the shapefiles have the same fields and types of objects. It will not work if a shapefile mixes points and polygons, for example. Or if one of the shapefiles has fields that the other shapefiles lack.
+The utility is simplistic and assumes all the shapefiles have the same fields and types of objects. It will not work if a shapefile mixes points and polygons, for example. Different attribute fields between shapefiles should be handled, but may not work perfectly.
 
 ## Usage
 
