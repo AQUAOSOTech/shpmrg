@@ -215,7 +215,7 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
             localFields := shapefile.Fields()
 
             // /opt/geo/myshape0.shp -> myshape0
-            basename := strings.Replace(filepath.Base(shapePath), filepath.Ext(shapePath), "")
+            basename := strings.Replace(filepath.Base(shapePath), filepath.Ext(shapePath), "", 1)
 
             // loop through all features in the shapefile
             var localRowIndex int
