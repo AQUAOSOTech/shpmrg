@@ -8,6 +8,7 @@ import (
     "os"
     "path/filepath"
     "regexp"
+    "strings"
     "sync"
     "sync/atomic"
 )
@@ -177,12 +178,17 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
         os.Exit(1)
     }
 
+    // Add a special field with the filename
+    fieldCount := len(allFields)
+    filenameLastColumnIndex := fieldCount - 1
+
     // write header
     var header []string
     // the order matters
     for _, f := range allFields {
         header = append(header, cleanName(f.Name[:11]))
     }
+    header[filenameLastColumnIndex] = "shpmrg_input"
     err = writer.Write(header)
     if err != nil {
         fmt.Println("Failed to write csv header", err)
@@ -208,19 +214,19 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
         go func(shapePath string, shapefile *shp.Reader) {
             localFields := shapefile.Fields()
 
+            // /opt/geo/myshape0.shp -> myshape0
+            basename := strings.Replace(filepath.Base(shapePath), filepath.Ext(shapePath), "")
+
             // loop through all features in the shapefile
             var localRowIndex int
             var csvRow []string
             for shapefile.Next() {
                 localRowIndex, _ = shapefile.Shape()
 
-                // print feature
-                //fmt.Println(reflect.TypeOf(shape).Elem(), shape.BBox())
-
                 // print attributes
                 var fieldName string
                 var column int
-                csvRow = newRow(len(fieldNameToIndex))
+                csvRow = newRow(fieldCount)
                 for localKey, field := range localFields {
                     val := shapefile.ReadAttribute(localRowIndex, localKey)
                     //fmt.Printf("\t%v: %v\row", f, val)
@@ -228,6 +234,7 @@ func extractAtrrs(fileMatches []string, allFields []shp.Field, fieldNameToIndex 
                     column = fieldNameToIndex[fieldName]
                     csvRow[column] = val
                 }
+                csvRow[filenameLastColumnIndex] = basename
 
                 writelock.Lock()
                 err = writer.Write(csvRow)
